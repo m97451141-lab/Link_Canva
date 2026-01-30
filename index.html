@@ -1,0 +1,335 @@
+<!-- <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LinkCanvas Ultimate</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root { --primary: #6366f1; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --danger: #ef4444; --success: #10b981; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; align-items: center; }
+        header { width: 100%; padding: 1.5rem 0; background: var(--primary); color: white; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .container { width: 95%; max-width: 1100px; margin-top: 1.5rem; padding-bottom: 50px; }
+        .input-section, .mask-section { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .flex-row { display: flex; flex-direction: column; gap: 12px; }
+        @media (min-width: 768px) { .flex-row { flex-direction: row; } }
+        input[type="text"] { flex-grow: 1; padding: 14px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 16px; outline: none; }
+        button { padding: 12px 20px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .dashboard { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        @media (min-width: 992px) { .dashboard { grid-template-columns: repeat(3, 1fr); } }
+        .card { background: var(--card); padding: 1.2rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: 400px; overflow-y: auto; }
+        .asset-item { padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+        .asset-link { display: block; font-size: 0.85rem; color: var(--primary); text-decoration: none; word-break: break-all; margin-bottom: 10px; }
+        .controls { display: flex; gap: 8px; }
+        .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); align-items: center; justify-content: center; }
+        .modal-content { background: white; width: 90%; max-height: 80vh; border-radius: 12px; overflow: hidden; position: relative; padding: 20px; }
+        #previewContainer img { max-width: 100%; height: auto; }
+        #previewContainer iframe { width: 100%; height: 60vh; border: none; }
+        .close-modal { position: absolute; top: 10px; right: 10px; font-size: 24px; cursor: pointer; color: var(--danger); }
+    </style>
+</head>
+<body>
+
+<header><h1>LinkCanvas Ultimate</h1><p>Extract, Mask & ZIP Assets</p></header>
+
+<div class="container">
+    <div class="input-section">
+        <div class="flex-row">
+            <input type="text" id="urlInput" placeholder="Enter URL to scan assets...">
+            <button onclick="extractContent()"><i class="fas fa-bolt"></i> Scan</button>
+            <button onclick="downloadAllAsZip()" style="background:#8b5cf6;"><i class="fas fa-file-archive"></i> ZIP All</button>
+            <button class="btn-danger" onclick="clearAllData()" style="background:var(--danger);"><i class="fas fa-trash"></i> Clear</button>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="card"><h3><i class="fas fa-image"></i> Images</h3><div id="imageList"></div></div>
+        <div class="card"><h3><i class="fas fa-file-alt"></i> Links</h3><div id="linkList"></div></div>
+        <div class="card"><h3><i class="fas fa-music"></i> Audio</h3><div id="audioList"></div></div>
+    </div>
+
+    <div class="mask-section">
+        <h3><i class="fas fa-link-slash"></i> Custom Link Masker</h3>
+        <div class="flex-row">
+            <input type="text" id="longUrl" placeholder="Real URL...">
+            <input type="text" id="customAlias" placeholder="Custom mask (optional)...">
+            <button onclick="processLink()" style="background:var(--success);"><i class="fas fa-mask"></i> Mask Link</button>
+        </div>
+        <p id="resultLink" style="margin-top:15px; font-weight:bold; color:var(--success); word-break:break-all;"></p>
+    </div>
+</div>
+
+<div id="previewModal" class="modal">
+    <div class="modal-content">
+        <span class="close-modal" onclick="closePreview()">&times;</span>
+        <div id="previewContainer"></div>
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://localhost:3000/api";
+
+    window.onload = () => {
+        const saved = localStorage.getItem('linkCanvasData');
+        if (saved) renderData(JSON.parse(saved));
+    };
+
+    async function extractContent() {
+        const url = document.getElementById('urlInput').value;
+        if (!url) return alert("Enter URL");
+        try {
+            const res = await fetch(`${API_URL}/scan`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            if(data.error) throw new Error(data.error);
+            localStorage.setItem('linkCanvasData', JSON.stringify(data));
+            renderData(data);
+        } catch (err) { alert(err.message); }
+    }
+
+    function renderData(assets) {
+        const populate = (id, list, type) => {
+            document.getElementById(id).innerHTML = list.map(item => `
+                <div class="asset-item">
+                    <a href="${item}" target="_blank" class="asset-link">${item.split('/').pop().substring(0,40)}</a>
+                    <div class="controls">
+                        <button onclick="openPreview('${item}', '${type}')" style="padding:6px; font-size:0.7rem;"><i class="fas fa-eye"></i></button>
+                        <button onclick="shareLink('${item}')" style="padding:6px; font-size:0.7rem; background:#3b82f6;"><i class="fas fa-share"></i></button>
+                    </div>
+                </div>
+            `).join('');
+        };
+        populate('imageList', assets.images, 'img');
+        populate('linkList', assets.links, 'link');
+        populate('audioList', assets.audio, 'audio');
+    }
+
+    function openPreview(url, type) {
+        const container = document.getElementById('previewContainer');
+        if (type === 'img') container.innerHTML = `<img src="${url}">`;
+        else if (type === 'audio') container.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
+        else container.innerHTML = `<iframe src="${url}"></iframe>`;
+        document.getElementById('previewModal').style.display = 'flex';
+    }
+
+    function closePreview() { document.getElementById('previewModal').style.display = 'none'; }
+
+    async function downloadAllAsZip() {
+        const data = JSON.parse(localStorage.getItem('linkCanvasData'));
+        if(!data) return alert("Scan something first");
+        const zip = new JSZip();
+        const urls = [...data.images, ...data.audio, ...data.links].filter(u => u.startsWith('http'));
+        
+        for (let url of urls) {
+            try {
+                const res = await fetch(`${API_URL}/proxy-download?url=${encodeURIComponent(url)}`);
+                const blob = await res.blob();
+                zip.file(url.split('/').pop() || 'file', blob);
+            } catch(e) {}
+        }
+        const content = await zip.generateAsync({type:"blob"});
+        saveAs(content, "Assets.zip");
+    }
+
+    async function processLink() {
+        const longUrl = document.getElementById('longUrl').value;
+        const customAlias = document.getElementById('customAlias').value;
+        const res = await fetch(`${API_URL}/mask`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ longUrl, customAlias })
+        });
+        const data = await res.json();
+        document.getElementById('resultLink').innerText = data.maskedUrl || data.error;
+    }
+
+    async function clearAllData() {
+        if(!confirm("Clear everything?")) return;
+        await fetch(`${API_URL}/clear-history`, {method:'DELETE'});
+        localStorage.removeItem('linkCanvasData');
+        location.reload();
+    }
+
+    function shareLink(url) {
+        if(navigator.share) navigator.share({url}); else { navigator.clipboard.writeText(url); alert("Copied!"); }
+    }
+</script>
+</body>
+</html> -->
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkCanvas Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        :root { --primary: #6366f1; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --danger: #ef4444; --success: #10b981; }
+        body { font-family: 'Segoe UI', sans-serif; background: radial-gradient(circle at 100% 100%, lightblue,ghostwhite,lightblue); margin: 0; display: flex; flex-direction: column; align-items: center; }
+        header { width: 100%; padding: 1.5rem; background: var(--primary); color: white; text-align: center; }
+        .container { width: 95%; max-width: 1100px; margin-top: 1.5rem; padding-bottom: 50px; }
+        .input-section, .mask-section { background: var(--card); padding: 1.5rem; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .flex-row { display: flex; flex-direction: column; gap: 10px; }
+        @media (min-width: 768px) { .flex-row { flex-direction: row; } }
+        input { flex-grow: 1; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; outline: none; }
+        button { padding: 12px 20px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .dashboard { display: grid; grid-template-columns: 1fr; gap: 20px; }
+        @media (min-width: 992px) { .dashboard { grid-template-columns: repeat(3, 1fr); } }
+        .card { background: var(--card); padding: 1.2rem; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: 400px; overflow-y: auto; }
+        .asset-item { padding: 10px 0; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
+        .asset-link { font-size: 0.8rem; color: var(--primary); text-decoration: none; word-break: break-all; max-width: 60%; }
+        .modal { display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); align-items: center; justify-content: center; }
+        .modal-content { background: white; width: 90%; max-height: 85vh; border-radius: 12px; position: relative; padding: 20px; text-align: center; }
+        .close-btn { position: absolute; top: 10px; right: 10px; font-size: 24px; cursor: pointer; color: var(--danger); }
+        #previewContainer img { max-width: 100%; max-height: 70vh; }
+        #previewContainer iframe { width: 100%; height: 70vh; border: none; }.hr{ font-family: Agatic; }
+    </style>
+</head>
+<body>
+
+<header><h1>Link_Canva</h1></header>
+
+<div class="container">
+    <div class="input-section">
+        <div class="flex-row">
+            <input type="text" id="urlInput" placeholder="URL to scan...">
+            <button onclick="extractContent()"><i class="fas fa-bolt"></i> Scan</button>
+            <button onclick="downloadAllAsZip()" id="zipBtn" style="background:#8b5cf6;"><i class="fas fa-file-archive"></i> ZIP All</button>
+            <button class="btn-danger" onclick="clearAllData()" style="background:var(--danger);"><i class="fas fa-trash"></i> Clear</button>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="card"><h3>Images</h3><div id="imageList"></div></div>
+        <div class="card"><h3>Links</h3><div id="linkList"></div></div>
+        <div class="card"><h3>Audio</h3><div id="audioList"></div></div>
+    </div>
+
+    <div class="mask-section">
+        <h3>Link Masker</h3>
+        <div class="flex-row">
+            <input type="text" id="longUrl" placeholder="Real URL...">
+            <input type="text" id="customAlias" placeholder="Alias (Optional)">
+            <button onclick="processLink()" style="background:var(--success);"><i class="fas fa-mask"></i> Mask</button>
+        </div>
+        <div id="resultContainer" style="margin-top:15px; display:none; align-items:center; gap:10px; background:#f1f5f9; padding:10px; border-radius:8px;">
+            <span id="resultLink" style="font-weight:bold; color:var(--success); word-break:break-all;"></span>
+            <button onclick="copyMasked()" style="padding:6px 12px; font-size:0.7rem;"><i class="fas fa-copy"></i> Copy</button>
+        </div>
+    </div>
+</div>
+
+<div id="previewModal" class="modal"><div class="modal-content"><span class="close-btn" onclick="closePreview()">&times;</span><div id="previewContainer"></div></div></div>
+
+<script>
+    const API_URL = "https://Link_Canva.onrender.com/api";
+
+    async function extractContent() {
+        const url = document.getElementById('urlInput').value;
+        const res = await fetch(`${API_URL}/scan`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ url }) });
+        const data = await res.json();
+        localStorage.setItem('linkCanvasData', JSON.stringify(data));
+        renderData(data);
+    }
+
+    function renderData(assets) {
+        const populate = (id, list, type) => {
+            document.getElementById(id).innerHTML = list.map(item => `
+                <div class="asset-item">
+                    <a href="${item}" target="_blank" class="asset-link">${item.split('/').pop().substring(0,25)}</a>
+                    <div style="display:flex; gap:5px;">
+                        <button onclick="openPreview('${item}', '${type}')" style="padding:5px;"><i class="fas fa-eye"></i></button>
+                    </div>
+                </div>`).join('');
+        };
+        populate('imageList', assets.images, 'img');
+        populate('linkList', assets.links, 'link');
+        populate('audioList', assets.audio, 'audio');
+    }
+
+    async function downloadAllAsZip() {
+        const data = JSON.parse(localStorage.getItem('linkCanvasData'));
+        if(!data) return alert("Scan something first");
+        const zipBtn = document.getElementById('zipBtn');
+        zipBtn.disabled = true; zipBtn.innerText = "Zipping...";
+        
+        const zip = new JSZip();
+        const urls = [...data.images, ...data.audio, ...data.links].filter(u => u && u.startsWith('http'));
+        
+        for (let url of urls) {
+            try {
+                const res = await fetch(`${API_URL}/proxy-download?url=${encodeURIComponent(url)}`);
+                const blob = await res.blob();
+                const name = url.split('/').pop().split('?')[0] || 'file';
+                zip.file(name, blob);
+            } catch(e) { console.log("Skipped:", url); }
+        }
+        
+        const content = await zip.generateAsync({type:"blob"});
+        saveAs(content, "LinkCanvas_Assets.zip");
+        zipBtn.disabled = false; zipBtn.innerHTML = '<i class="fas fa-file-archive"></i> ZIP All';
+    }
+
+    async function processLink() {
+        const longUrl = document.getElementById('longUrl').value;
+        const customAlias = document.getElementById('customAlias').value;
+        const res = await fetch(`${API_URL}/mask`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ longUrl, customAlias }) });
+        const data = await res.json();
+        if(data.maskedUrl) {
+            document.getElementById('resultLink').innerText = data.maskedUrl;
+            document.getElementById('resultContainer').style.display = 'flex';
+        } else alert(data.error);
+    }
+
+    function copyMasked() {
+        navigator.clipboard.writeText(document.getElementById('resultLink').innerText);
+        alert("Copied!");
+    }
+
+    function openPreview(url, type) {
+        const c = document.getElementById('previewContainer');
+        if (type === 'img') c.innerHTML = `<img src="${url}">`;
+        else if (type === 'audio') c.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
+        else c.innerHTML = `<iframe src="${url}"></iframe>`;
+        document.getElementById('previewModal').style.display = 'flex';
+    }
+
+    function closePreview() { document.getElementById('previewModal').style.display = 'none'; }
+    async function clearAllData() { await fetch(`${API_URL}/clear-history`, {method:'DELETE'}); localStorage.removeItem('linkCanvasData'); location.reload(); }
+</script>
+</body>
+</html>
