@@ -8,7 +8,12 @@ const cors = require('cors');
 const app = express();
 const db = new Database('links.db');
 
-app.use(cors());
+app.use(cors({
+    origin: '*', // Allows requests from any origin (GitHub Pages, localhost, etc.)
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
 app.use(express.json());
 
 // Initialize DB
@@ -70,4 +75,5 @@ app.delete('/api/clear-history', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
